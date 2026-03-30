@@ -1,4 +1,4 @@
-# TON Wallet (Testnet)
+# TON Wallet
 
 Self-custodial web-кошелёк для TON testnet. Работает полностью в браузере без собственного backend. Мнемоника шифруется паролем (AES-256-GCM) и хранится в localStorage.
 
