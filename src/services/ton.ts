@@ -2,11 +2,8 @@ import { TonClient, WalletContractV4, internal } from '@ton/ton';
 import { mnemonicNew, mnemonicToPrivateKey, mnemonicValidate } from '@ton/crypto';
 import { Address, toNano, fromNano, beginCell } from '@ton/core';
 
-const TONCENTER_TESTNET = 'https://testnet.toncenter.com/api/v2';
-
-// Бесплатный API-ключ testnet от toncenter.
-// Получить свой: https://t.me/tonapibot → /get testnet
-const API_KEY = '60ab62f8c12ab9bb77164012297c24e22cef610dbfad7becd5f17d3ecac7c669';
+const TONCENTER_TESTNET = import.meta.env.VITE_TONCENTER_URL || 'https://testnet.toncenter.com/api/v2';
+const API_KEY = import.meta.env.VITE_TONCENTER_API_KEY || '';
 
 const clientOptions: { endpoint: string; apiKey?: string } = {
   endpoint: `${TONCENTER_TESTNET}/jsonRPC`,
@@ -151,7 +148,6 @@ function buildTransferBody(comment?: string) {
 
 export interface FeeEstimate {
   total: string;
-  fwdFee: string;
 }
 
 export async function estimateFee(
@@ -211,14 +207,10 @@ export async function estimateFee(
       Number(fees.storage_fee) +
       Number(fees.gas_fee) +
       Number(fees.fwd_fee);
-    const fwdNano = Number(fees.fwd_fee);
 
-    return {
-      total: fromNano(totalNano),
-      fwdFee: fromNano(fwdNano),
-    };
+    return { total: fromNano(totalNano) };
   } catch {
-    return { total: '0.01', fwdFee: '0.004' };
+    return { total: '0.01' };
   }
 }
 
@@ -226,7 +218,6 @@ export async function sendTon(
   mnemonic: string[],
   toAddress: string,
   amountTon: string,
-  fwdFee: string,
   comment?: string
 ): Promise<void> {
   const keyPair = await mnemonicToPrivateKey(mnemonic);
@@ -239,16 +230,13 @@ export async function sendTon(
   const seqno = await withRetry(() => contract.getSeqno());
   const body = buildTransferBody(comment);
 
-  // Добавляем fwd_fee к value, чтобы получатель получил ровно amountTon
-  const valueNano = toNano(amountTon) + toNano(fwdFee);
-
   await withRetry(() => contract.sendTransfer({
     seqno,
     secretKey: keyPair.secretKey,
     messages: [
       internal({
         to: Address.parse(toAddress),
-        value: valueNano,
+        value: toNano(amountTon),
         body,
         bounce: false,
       }),

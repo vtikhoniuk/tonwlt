@@ -22,7 +22,6 @@ export default function Send() {
   const [pastedValue, setPastedValue] = useState('');
   const [warningsAccepted, setWarningsAccepted] = useState(false);
   const [fee, setFee] = useState(ESTIMATED_FEE.toString());
-  const [fwdFee, setFwdFee] = useState('0.004');
 
   if (!wallet) return null;
 
@@ -58,8 +57,8 @@ export default function Send() {
 
     // Estimate fee in background (don't block UI)
     estimateFee(wallet.mnemonic, normalizedAddress, amount, comment || undefined)
-      .then(est => { setFee(est.total); setFwdFee(est.fwdFee); })
-      .catch(() => { setFee(ESTIMATED_FEE.toString()); setFwdFee('0.004'); });
+      .then(est => setFee(est.total))
+      .catch(() => setFee(ESTIMATED_FEE.toString()));
 
     const spoofWarnings: SpoofingWarning[] = [];
 
@@ -103,7 +102,7 @@ export default function Send() {
     setError('');
 
     try {
-      await sendTon(wallet.mnemonic, address, amount, fwdFee, comment || undefined);
+      await sendTon(wallet.mnemonic, address, amount, comment || undefined);
       setStep('success');
       setTimeout(() => refresh(), 3000);
     } catch (e) {

@@ -37,8 +37,7 @@ preview:
 clean:
 	rm -rf dist node_modules
 
-test:
-	npm test
+test: test-unit build test-e2e
 
 test-unit:
 	npm run test:unit
@@ -47,4 +46,4 @@ test-unit-watch:
 	npm run test:unit:watch
 
 test-e2e:
-	npm run test:e2e
+	npx playwright test
