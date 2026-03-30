@@ -1,6 +1,6 @@
 import { TonClient, WalletContractV4, internal } from '@ton/ton';
 import { mnemonicNew, mnemonicToPrivateKey, mnemonicValidate } from '@ton/crypto';
-import { Address, toNano, fromNano, beginCell } from '@ton/core';
+import { Address, Cell, toNano, fromNano, beginCell, SendMode } from '@ton/core';
 
 const TONCENTER_TESTNET = import.meta.env.VITE_TONCENTER_URL || 'https://testnet.toncenter.com/api/v2';
 const API_KEY = import.meta.env.VITE_TONCENTER_API_KEY || '';
@@ -138,8 +138,8 @@ async function withRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000): Pr
   throw new Error('Retry limit exceeded');
 }
 
-function buildTransferBody(comment?: string) {
-  if (!comment) return undefined;
+export function buildTransferBody(comment?: string) {
+  if (!comment?.trim()) return undefined;
   return beginCell()
     .storeUint(0, 32)
     .storeStringTail(comment)
@@ -150,67 +150,74 @@ export interface FeeEstimate {
   total: string;
 }
 
+export interface FwdPrices {
+  lumpPrice: bigint;
+  bitPrice: bigint;
+  cellPrice: bigint;
+  firstFrac: bigint;
+}
+
+let cachedFwdPrices: FwdPrices | null = null;
+
+async function getFwdPrices(): Promise<FwdPrices> {
+  if (cachedFwdPrices) return cachedFwdPrices;
+
+  const res = await fetch(apiUrl('getConfigParam', { config_id: '25' }));
+  const data = await res.json();
+  if (!data.ok) throw new Error('getConfigParam failed');
+
+  const cell = Cell.fromBoc(Buffer.from(data.result.config.bytes, 'base64'))[0];
+  const slice = cell.beginParse();
+  slice.loadUint(8); // tag
+  const lumpPrice = slice.loadUintBig(64);
+  const bitPrice = slice.loadUintBig(64);
+  const cellPrice = slice.loadUintBig(64);
+  slice.loadUint(32); // ihr_price_factor
+  const firstFrac = BigInt(slice.loadUint(16));
+
+  cachedFwdPrices = { lumpPrice, bitPrice, cellPrice, firstFrac };
+  return cachedFwdPrices;
+}
+
+export function countCellStats(cell: Cell): { bits: number; cells: number } {
+  let cells = 1;
+  let bits = cell.bits.length;
+  for (const ref of cell.refs) {
+    const sub = countCellStats(ref);
+    cells += sub.cells;
+    bits += sub.bits;
+  }
+  return { cells, bits };
+}
+
+// Compute forwarding fee based on body cell only (bits + cells).
+// TON deducts this full amount from the message value upon delivery.
+export function computeBodyFwdFee(prices: FwdPrices, body?: Cell): bigint {
+  let bodyBits = 0;
+  let bodyCells = 0;
+  if (body) {
+    const stats = countCellStats(body);
+    bodyBits = stats.bits;
+    bodyCells = stats.cells;
+  }
+  return prices.lumpPrice +
+    ((prices.bitPrice * BigInt(bodyBits) + prices.cellPrice * BigInt(bodyCells) + 65535n) >> 16n);
+}
+
 export async function estimateFee(
-  mnemonic: string[],
-  toAddress: string,
-  amountTon: string,
   comment?: string
 ): Promise<FeeEstimate> {
   try {
-    const keyPair = await mnemonicToPrivateKey(mnemonic);
-    const wallet = WalletContractV4.create({
-      publicKey: keyPair.publicKey,
-      workchain: 0,
-    });
-
-    const contract = client.open(wallet);
-    const seqno = await withRetry(() => contract.getSeqno());
-
+    const prices = await getFwdPrices();
     const body = buildTransferBody(comment);
+    const fwdFee = computeBodyFwdFee(prices, body);
 
-    const transfer = wallet.createTransfer({
-      seqno,
-      secretKey: keyPair.secretKey,
-      messages: [
-        internal({
-          to: Address.parse(toAddress),
-          value: toNano(amountTon),
-          body,
-          bounce: false,
-        }),
-      ],
-    });
-
-    const boc = transfer.toBoc().toString('base64');
-    const senderAddress = wallet.address.toString({ testOnly: true, bounceable: false });
-
-    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-    if (API_KEY) headers['X-API-Key'] = API_KEY;
-
-    const res = await fetch(`${TONCENTER_TESTNET}/estimateFee`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        address: senderAddress,
-        body: boc,
-        ignore_chksig: true,
-      }),
-    });
-
-    if (!res.ok) throw new Error('estimateFee failed');
-    const data = await res.json();
-    if (!data.ok) throw new Error('estimateFee failed');
-
-    const fees = data.result.source_fees;
-    const totalNano =
-      Number(fees.in_fwd_fee) +
-      Number(fees.storage_fee) +
-      Number(fees.gas_fee) +
-      Number(fees.fwd_fee);
+    const ESTIMATED_GAS_NANO = 3000000n;
+    const totalNano = ESTIMATED_GAS_NANO + fwdFee;
 
     return { total: fromNano(totalNano) };
   } catch {
-    return { total: '0.01' };
+    return { total: '0.004' };
   }
 }
 
@@ -233,6 +240,7 @@ export async function sendTon(
   await withRetry(() => contract.sendTransfer({
     seqno,
     secretKey: keyPair.secretKey,
+    sendMode: SendMode.PAY_GAS_SEPARATELY + SendMode.IGNORE_ERRORS,
     messages: [
       internal({
         to: Address.parse(toAddress),

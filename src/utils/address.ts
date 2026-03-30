@@ -1,7 +1,7 @@
 import { ParsedTransaction } from '../services/ton';
 
 export interface SpoofingWarning {
-  type: 'similar_address' | 'dust_transaction' | 'clipboard_mismatch';
+  type: 'similar_address' | 'clipboard_mismatch';
   message: string;
   details: string;
   similarTo?: string;

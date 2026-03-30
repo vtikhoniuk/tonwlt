@@ -5,6 +5,17 @@ import { WalletProvider } from './context/WalletContext';
 import App from './App';
 import './App.css';
 
+// Set favicon dynamically (works with file:// protocol for ton-wallet.html)
+const FAVICON_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56"><circle cx="28" cy="28" r="28" fill="%230098EA"/><path d="M37.56 15.6H18.44C14.18 15.6 11.5 19.51 13.43 23.31L25.99 48.4C26.83 50.07 29.17 50.07 30.01 48.4L42.57 23.31C44.5 19.51 41.82 15.6 37.56 15.6ZM25.43 38.77L22.67 32.92L15.8 19.38C15.21 18.21 16.06 16.8 17.37 16.8H25.43V38.77ZM40.2 19.38L33.33 32.93L30.57 38.77V16.8H38.63C39.94 16.8 40.79 18.21 40.2 19.38Z" fill="white"/></svg>';
+{
+  const link = document.querySelector<HTMLLinkElement>('link[rel="icon"]')
+    || document.createElement('link');
+  link.rel = 'icon';
+  link.type = 'image/svg+xml';
+  link.href = 'data:image/svg+xml,' + FAVICON_SVG;
+  document.head.appendChild(link);
+}
+
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     <HashRouter>

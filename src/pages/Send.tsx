@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext';
 import { isValidAddress, formatAddress, sendTon, estimateFee } from '../services/ton';
@@ -22,19 +22,23 @@ export default function Send() {
   const [pastedValue, setPastedValue] = useState('');
   const [warningsAccepted, setWarningsAccepted] = useState(false);
   const [fee, setFee] = useState(ESTIMATED_FEE.toString());
+  const confirmCheckboxRef = useRef<HTMLInputElement>(null);
+  const confirmBtnRef = useRef<HTMLButtonElement>(null);
 
   if (!wallet) return null;
 
+  const normalizedAddress = isValidAddress(address.trim()) ? formatAddress(address.trim()) : '';
+  const total = amount && parseFloat(amount) > 0
+    ? formatTon((parseFloat(amount) + parseFloat(fee)).toString())
+    : '';
+
   const handlePaste = (e: React.ClipboardEvent<HTMLInputElement>) => {
-    const pasted = e.clipboardData.getData('text').trim();
-    setPastedValue(pasted);
+    setPastedValue(e.clipboardData.getData('text').trim());
   };
 
   const validate = (): string | null => {
     if (!address.trim()) return 'Введите адрес получателя';
-
-    if (!isValidAddress(address.trim())) return 'Некорректный адрес TON';
-    const normalizedAddress = formatAddress(address.trim());
+    if (!normalizedAddress) return 'Некорректный адрес TON';
     if (normalizedAddress === wallet.address) return 'Нельзя отправить самому себе';
 
     const amountNum = parseFloat(amount);
@@ -52,21 +56,16 @@ export default function Send() {
     }
 
     setError('');
-    const normalizedAddress = formatAddress(address.trim());
-    setAddress(normalizedAddress);
 
-    // Estimate fee in background (don't block UI)
-    estimateFee(wallet.mnemonic, normalizedAddress, amount, comment || undefined)
+    estimateFee(comment || undefined)
       .then(est => setFee(est.total))
       .catch(() => setFee(ESTIMATED_FEE.toString()));
 
     const spoofWarnings: SpoofingWarning[] = [];
 
-    // Check for address spoofing against transaction history
     const addrWarnings = checkAddressSpoofing(normalizedAddress, transactions, wallet.address);
     spoofWarnings.push(...addrWarnings);
 
-    // Check clipboard consistency
     if (pastedValue) {
       const normalizedPasted = formatAddress(pastedValue);
       if (normalizedPasted !== normalizedAddress) {
@@ -78,7 +77,6 @@ export default function Send() {
       }
     }
 
-    // Paste verification reminder
     if (pastedValue && spoofWarnings.length === 0) {
       spoofWarnings.push({
         type: 'clipboard_mismatch',
@@ -102,7 +100,7 @@ export default function Send() {
     setError('');
 
     try {
-      await sendTon(wallet.mnemonic, address, amount, comment || undefined);
+      await sendTon(wallet.mnemonic, normalizedAddress, amount, comment || undefined);
       setStep('success');
       setTimeout(() => refresh(), 3000);
     } catch (e) {
@@ -163,12 +161,9 @@ export default function Send() {
 
   if (step === 'confirm') {
     const [prefix, middle, suffix] = splitAddressForDisplay(address);
-    const hasCriticalWarning = warnings.some(
-      (w) => w.type === 'similar_address'
-    );
-    const hasClipboardNote = warnings.some(
-      (w) => w.type === 'clipboard_mismatch'
-    );
+    const hasCriticalWarning = warnings.some((w) => w.type === 'similar_address');
+    const hasClipboardNote = warnings.some((w) => w.type === 'clipboard_mismatch');
+    const showCheckbox = hasCriticalWarning || hasClipboardNote;
 
     return (
       <div className="page">
@@ -219,7 +214,7 @@ export default function Send() {
             </div>
             <div className="confirm-row fee-total">
               <span className="confirm-label">Итого с баланса:</span>
-              <span className="confirm-value">~{formatTon((parseFloat(amount) + parseFloat(fee)).toString())} TON</span>
+              <span className="confirm-value">~{total} TON</span>
             </div>
             {comment && (
               <div className="confirm-row">
@@ -229,12 +224,15 @@ export default function Send() {
             )}
           </div>
 
-          {(hasCriticalWarning || hasClipboardNote) && (
+          {showCheckbox && (
             <label className="checkbox-label warning-checkbox">
               <input
+                ref={confirmCheckboxRef}
                 type="checkbox"
                 checked={warningsAccepted}
                 onChange={(e) => setWarningsAccepted(e.target.checked)}
+                onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+                autoFocus
               />
               Я проверил адрес получателя и подтверждаю отправку
             </label>
@@ -243,8 +241,11 @@ export default function Send() {
           {error && <div className="error-msg">{error}</div>}
 
           <button
+            ref={confirmBtnRef}
             className={`btn ${hasCriticalWarning ? 'btn-danger' : 'btn-primary'}`}
             onClick={handleSend}
+            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            autoFocus={!showCheckbox}
           >
             {hasCriticalWarning ? 'Отправить несмотря на предупреждение' : 'Подтвердить отправку'}
           </button>
@@ -271,6 +272,7 @@ export default function Send() {
             value={address}
             onChange={(e) => setAddress(e.target.value)}
             onPaste={handlePaste}
+            onKeyDown={(e) => e.key === 'Enter' && handleReview()}
             placeholder="UQ... или EQ..."
             autoComplete="off"
           />
@@ -282,6 +284,7 @@ export default function Send() {
             type="number"
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleReview()}
             placeholder="0.00"
             min="0"
             step="0.01"
@@ -298,7 +301,7 @@ export default function Send() {
               Макс
             </button>
           </div>
-          {amount && parseFloat(amount) > 0 && (
+          {total && (
             <div className="fee-info">
               <div className="fee-row">
                 <span>Комиссия сети (прим.):</span>
@@ -306,7 +309,7 @@ export default function Send() {
               </div>
               <div className="fee-row fee-total">
                 <span>Итого с баланса:</span>
-                <span>~{formatTon((parseFloat(amount) + parseFloat(fee)).toString())} TON</span>
+                <span>~{total} TON</span>
               </div>
             </div>
           )}
@@ -318,6 +321,7 @@ export default function Send() {
             type="text"
             value={comment}
             onChange={(e) => setComment(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleReview()}
             placeholder="Комментарий к переводу"
           />
         </div>
@@ -331,12 +335,12 @@ export default function Send() {
 }
 
 function AddressComparison({ address, compareWith }: { address: string; compareWith: string }) {
-  const diffs = findAddressDifferences(address, compareWith);
+  const diffSet = new Set(findAddressDifferences(address, compareWith));
 
   return (
     <span className="address-comparison">
       {address.split('').map((char, i) => (
-        <span key={i} className={diffs.includes(i) ? 'char-diff' : 'char-same'}>
+        <span key={i} className={diffSet.has(i) ? 'char-diff' : 'char-same'}>
           {char}
         </span>
       ))}

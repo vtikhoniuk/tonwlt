@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext';
+import { validatePassword } from '../services/crypto';
 
 type Step = 'generating' | 'show_mnemonic' | 'confirm' | 'set_password' | 'done';
 
@@ -46,12 +47,9 @@ export default function CreateWallet() {
   };
 
   const handleSetPassword = async () => {
-    if (password.length < 8) {
-      setError('Пароль должен быть не менее 8 символов');
-      return;
-    }
-    if (password !== passwordConfirm) {
-      setError('Пароли не совпадают');
+    const passwordError = validatePassword(password, passwordConfirm);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
     setError('');
@@ -126,6 +124,7 @@ export default function CreateWallet() {
                 onChange={(e) =>
                   setConfirmWords((prev) => ({ ...prev, [idx]: e.target.value }))
                 }
+                onKeyDown={(e) => e.key === 'Enter' && handleConfirm()}
                 placeholder={`Введите слово #${idx + 1}`}
               />
             </div>
@@ -154,6 +153,7 @@ export default function CreateWallet() {
               type="password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSetPassword()}
               placeholder="Минимум 8 символов"
             />
           </div>
@@ -163,6 +163,7 @@ export default function CreateWallet() {
               type="password"
               value={passwordConfirm}
               onChange={(e) => setPasswordConfirm(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSetPassword()}
               placeholder="Повторите пароль"
             />
           </div>

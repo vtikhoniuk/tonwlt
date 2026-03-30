@@ -1,4 +1,11 @@
 const PBKDF2_ITERATIONS = 600_000;
+const MIN_PASSWORD_LENGTH = 8;
+
+export function validatePassword(password: string, confirm: string): string | null {
+  if (password.length < MIN_PASSWORD_LENGTH) return `Пароль должен быть не менее ${MIN_PASSWORD_LENGTH} символов`;
+  if (password !== confirm) return 'Пароли не совпадают';
+  return null;
+}
 
 function toBase64(bytes: Uint8Array): string {
   let binary = '';

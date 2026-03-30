@@ -1,8 +1,12 @@
-.env
 node_modules/
 dist/
 coverage/
 test-results/
 tsconfig.tsbuildinfo
+
+.env
 *.log
+
 .playwright-mcp/
+tmp/
+.claude/

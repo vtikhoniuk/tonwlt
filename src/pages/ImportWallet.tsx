@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useWallet } from '../context/WalletContext';
+import { validatePassword } from '../services/crypto';
 
 function splitWords(input: string): string[] {
   return input.trim().split(/[\s,]+/).filter(Boolean);
@@ -25,13 +26,9 @@ export default function ImportWallet() {
       return;
     }
 
-    if (password.length < 8) {
-      setError('Пароль должен быть не менее 8 символов');
-      return;
-    }
-
-    if (password !== passwordConfirm) {
-      setError('Пароли не совпадают');
+    const passwordError = validatePassword(password, passwordConfirm);
+    if (passwordError) {
+      setError(passwordError);
       return;
     }
 
@@ -73,6 +70,7 @@ export default function ImportWallet() {
             type="password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleImport()}
             placeholder="Минимум 8 символов"
             disabled={loading}
           />
@@ -83,6 +81,7 @@ export default function ImportWallet() {
             type="password"
             value={passwordConfirm}
             onChange={(e) => setPasswordConfirm(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleImport()}
             placeholder="Повторите пароль"
             disabled={loading}
           />
